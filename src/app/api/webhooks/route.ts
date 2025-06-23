@@ -11,13 +11,16 @@ export async function POST(req: NextRequest) {
 
     if (eventType === "user.created" || eventType === "user.updated") {
       const userData = evt.data;
+
+      const email = userData.email_addresses[0].email_address;
+
       const currentUser: Partial<User> = {
         id: userData.id,
         name:
           userData.first_name && userData.last_name
             ? `${userData.first_name} ${userData.last_name}`
-            : userData.email_addresses[0].email_address,
-        email: userData.email_addresses[0].email_address,
+            : email,
+        email,
         picture: userData.image_url,
       };
 
@@ -29,20 +32,26 @@ export async function POST(req: NextRequest) {
         where: { email: currentUser.email },
         update: currentUser,
         create: {
-          name: currentUser.name!,
           id: currentUser.id!,
+          name: currentUser.name!,
           email: currentUser.email!,
           picture: currentUser.picture!,
-          role: currentUser.role || "USER",
+          role: "USER",
         },
       });
 
-      const clerk = await clerkClient();
-      clerk.users.updateUser(userData.id, {
-        privateMetadata: {
-          role: currentUser.role || "USER",
-        },
+      const dbUser = await db.user.findUnique({
+        where: { email: currentUser.email! },
       });
+
+      if (dbUser) {
+        const clerk = await clerkClient();
+        await clerk.users.updateUser(dbUser.id, {
+          privateMetadata: {
+            role: dbUser.role,
+          },
+        });
+      }
 
       return new Response("User synced", { status: 200 });
     }
